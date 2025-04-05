@@ -106,7 +106,7 @@ func getFingerprint(key ssh.PublicKey) string {
 	return base64.StdEncoding.EncodeToString(h.Sum(nil))
 }
 
-// Generate an `authorized_keys` line for a public key
+// Generate an `authorized_keys` line for a pub key
 func getAuthorizedKey(key ssh.PublicKey) string {
 	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(key)))
 }

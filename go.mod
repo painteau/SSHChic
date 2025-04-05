@@ -1,4 +1,4 @@
-module github.com/danielewood/vanityssh-go
+module github.com/painteau/SSHChic
 
 go 1.18
 
