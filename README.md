@@ -1,6 +1,6 @@
 # 🔑 SSHChic
 
-> ✨ Generate millions of ED25519 keys and find unique patterns in your SSH public keys!
+✨ Generate ED25519 keys and find unique patterns in your SSH public keys!
 
 ## 🚀 Features
 
