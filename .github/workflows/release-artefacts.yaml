@@ -5,98 +5,202 @@ on:
 name: Build Release Artifacts
 jobs:
   release-linux-386:
-    name: release linux/386
+    name: release linux/i686
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@master
-    - name: compile and release
-      uses: danielewood/go-release.action@master
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: i686-unknown-linux-gnu
+        override: true
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release --target i686-unknown-linux-gnu
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          target/i686-unknown-linux-gnu/release/sshchic
+          LICENSE
+          README.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GOARCH: "386"
-        GOOS: linux
-        EXTRA_FILES: "LICENSE README.md"
   release-linux-amd64:
-    name: release linux/amd64
+    name: release linux/x86_64
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@master
-    - name: compile and release
-      uses: danielewood/go-release.action@master
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-unknown-linux-gnu
+        override: true
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release --target x86_64-unknown-linux-gnu
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          target/x86_64-unknown-linux-gnu/release/sshchic
+          LICENSE
+          README.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GOARCH: amd64
-        GOOS: linux
-        EXTRA_FILES: "LICENSE README.md"
   release-linux-arm:
-    name: release linux/386
+    name: release linux/arm
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@master
-    - name: compile and release
-      uses: danielewood/go-release.action@master
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: arm-unknown-linux-gnueabihf
+        override: true
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release --target arm-unknown-linux-gnueabihf
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          target/arm-unknown-linux-gnueabihf/release/sshchic
+          LICENSE
+          README.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GOARCH: "arm"
-        GOOS: linux
-        EXTRA_FILES: "LICENSE README.md"
   release-linux-arm64:
-    name: release linux/amd64
+    name: release linux/aarch64
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@master
-    - name: compile and release
-      uses: danielewood/go-release.action@master
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: aarch64-unknown-linux-gnu
+        override: true
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release --target aarch64-unknown-linux-gnu
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          target/aarch64-unknown-linux-gnu/release/sshchic
+          LICENSE
+          README.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GOARCH: arm64
-        GOOS: linux
-        EXTRA_FILES: "LICENSE README.md"
   release-darwin-amd64:
-    name: release darwin/amd64
-    runs-on: ubuntu-latest
+    name: release macos/x86_64
+    runs-on: macos-latest
     steps:
-    - uses: actions/checkout@master
-    - name: compile and release
-      uses: danielewood/go-release.action@master
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-apple-darwin
+        override: true
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release --target x86_64-apple-darwin
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          target/x86_64-apple-darwin/release/sshchic
+          LICENSE
+          README.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GOARCH: amd64
-        GOOS: darwin
-        EXTRA_FILES: "LICENSE README.md"
   release-darwin-arm64:
-    name: release darwin/arm64
-    runs-on: ubuntu-latest
+    name: release macos/aarch64
+    runs-on: macos-latest
     steps:
-    - uses: actions/checkout@master
-    - name: compile and release
-      uses: danielewood/go-release.action@master
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: aarch64-apple-darwin
+        override: true
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release --target aarch64-apple-darwin
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          target/aarch64-apple-darwin/release/sshchic
+          LICENSE
+          README.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GOARCH: arm64
-        GOOS: darwin
-        EXTRA_FILES: "LICENSE README.md"
   release-windows-386:
-    name: release windows/386
-    runs-on: ubuntu-latest
+    name: release windows/i686
+    runs-on: windows-latest
     steps:
-    - uses: actions/checkout@master
-    - name: compile and release
-      uses: danielewood/go-release.action@master
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: i686-pc-windows-msvc
+        override: true
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release --target i686-pc-windows-msvc
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          target/i686-pc-windows-msvc/release/sshchic.exe
+          LICENSE
+          README.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GOARCH: "386"
-        GOOS: windows
-        EXTRA_FILES: "LICENSE README.md"
   release-windows-amd64:
-    name: release windows/amd64
-    runs-on: ubuntu-latest
+    name: release windows/x86_64
+    runs-on: windows-latest
     steps:
-    - uses: actions/checkout@master
-    - name: compile and release
-      uses: danielewood/go-release.action@master
+    - uses: actions/checkout@v3
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-pc-windows-msvc
+        override: true
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release --target x86_64-pc-windows-msvc
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          target/x86_64-pc-windows-msvc/release/sshchic.exe
+          LICENSE
+          README.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GOARCH: amd64
-        GOOS: windows
-        EXTRA_FILES: "LICENSE README.md"

@@ -1,0 +1,66 @@
+name: Check Build
+on: 
+  push:
+    paths:
+      - '**/*.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+    branches:
+      - main
+  workflow_dispatch:
+  
+jobs:
+  build:
+    name: Build Rust
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        rust-version: [stable]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: ${{ matrix.rust-version }}
+        override: true
+        components: rustfmt, clippy
+
+    - name: Cache dependencies
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Check formatting
+      run: cargo fmt -- --check
+
+    - name: Run clippy
+      run: cargo clippy -- -D warnings
+
+    - name: Run tests
+      run: cargo test --verbose
+
+    - name: Build release binary
+      run: cargo build --release
+
+    - name: Check Help
+      run: cargo run -- --help || true
+
+    - name: Test Regex - Ends with 'GO'
+      run: cargo run -- --regex 'GO$'
+
+    - name: Test Regex - Ends with 'SSH', insensitive
+      run: cargo run -- --insensitive --regex "SSH$"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: sshchic-${{ matrix.os }}
+        path: target/release/sshchic*

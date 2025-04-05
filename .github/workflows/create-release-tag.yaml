@@ -2,9 +2,9 @@ name: Create Release Tag
 on: 
   push:
     paths:
-      - '*.go'
-      - 'go.mod'
-      - 'go.sum'
+      - 'src/**/*.rs'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
     branches:
       - main
   workflow_dispatch:

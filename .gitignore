@@ -1,0 +1,34 @@
+pte# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Go
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+debug/
+debug.test
+
+# Build
+dist/
+build/
+out/

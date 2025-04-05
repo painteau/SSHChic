@@ -43,7 +43,7 @@
    ```
 2. Build the project:
    ```bash
-   go build
+   cargo build --release
    ```
 
 ## 🛠️ Usage
@@ -53,10 +53,14 @@ Without options, SSHChic generates a key pair and saves them in `id_ed25519` and
 ### Available Options
 
 ```bash
-Usage of ./sshchic:
-  -insensitive    Case insensitive search
-  -regex string   Regex pattern to search for
-  -streaming      Continue searching after a match
+Usage: sshchic [OPTIONS]
+
+Options:
+    -i, --insensitive    Case insensitive search
+    -r, --regex <PATTERN>    Regex pattern to search for
+    -s, --streaming      Continue searching after a match
+    -h, --help          Print help
+    -V, --version       Print version
 ```
 
 ## 💡 Examples
@@ -66,22 +70,22 @@ Usage of ./sshchic:
 ```bash
 # Search for "prout" or "caca" at the end of the key (case insensitive) or "NeRD" (case sensitive)
 # (case insensitive by default, use --insensitive to enable case sensitive search
-./sshchic --regex '(?i)prout$|caca$|(?-i)nErD$'
+sshchic -r '(?i)prout$|caca$|(?-i)nErD$'
 ```
 
 ### 2️⃣ Continuous Search with Streaming
 
 ```bash
 # Search for "marmelade" continuously (case insensitive)
-./sshchic --streaming --insensitive --regex marmelade
+sshchic -s -i -r marmelade
 ```
 
 ## ⚠️ Important Notes
 
-- 🔒 My first Go application - use generated keys at your own risk
+- 🔒 Rewritten in Rust for improved performance and safety
 - 💻 Heavy and long CPU usage in streaming mode or with complex patterns
 
-[![Go Build](https://github.com/Zebradil/SSHChic/actions/workflows/build-go.yml/badge.svg)](https://github.com/Zebradil/SSHChic/actions/workflows/build-go.yml)
+[![Rust Build](https://github.com/painteau/SSHChic/actions/workflows/build-rust.yml/badge.svg)](https://github.com/painteau/SSHChic/actions/workflows/build-rust.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## 📄 License
