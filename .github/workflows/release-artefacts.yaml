@@ -1,5 +1,12 @@
 # .github/workflows/release.yaml
 on:
+  push:
+    paths:
+      - '*.go'
+      - 'go.mod'
+      - 'go.sum'
+    branches:
+      - main
   release:
     types: [published]
 name: Build Release Artifacts
