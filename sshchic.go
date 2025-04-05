@@ -99,7 +99,7 @@ func findsshkeys() {
 	}
 }
 
-// Generate a SHA256 fingerprint of a public key
+// Generate a SHA256 fingerprint of a pub key
 func getFingerprint(key ssh.PublicKey) string {
 	h := sha256.New()
 	h.Write(key.Marshal())
