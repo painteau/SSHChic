@@ -1,8 +1,12 @@
 name: Check Build
 on: 
-  pull_request:
+  push:
     paths:
       - '*.go'
+      - 'go.mod'
+      - 'go.sum'
+    branches:
+      - main
   workflow_dispatch:
   
 jobs:
