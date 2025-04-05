@@ -8,35 +8,40 @@ on:
     branches:
       - main
   workflow_dispatch:
-  
+  pull_request:
+    branches: [ main ]
+
 jobs:
   build:
-    name: Build Rust
+    name: Build and Test
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         rust-version: [stable]
+        build-mode: [debug, release]
     runs-on: ${{ matrix.os }}
     steps:
     - name: Check out code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
-        profile: minimal
         toolchain: ${{ matrix.rust-version }}
-        override: true
         components: rustfmt, clippy
 
     - name: Cache dependencies
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-${{ matrix.build-mode }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-${{ matrix.build-mode }}-
+          ${{ runner.os }}-cargo-
 
     - name: Check formatting
       run: cargo fmt -- --check
@@ -45,22 +50,22 @@ jobs:
       run: cargo clippy -- -D warnings
 
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --profile ${{ matrix.build-mode }} --verbose
 
-    - name: Build release binary
-      run: cargo build --release
+    - name: Build
+      run: cargo build --profile ${{ matrix.build-mode }}
 
-    - name: Check Help
-      run: cargo run -- --help || true
-
-    - name: Test Regex - Ends with 'GO'
-      run: cargo run -- --regex 'GO$'
-
-    - name: Test Regex - Ends with 'SSH', insensitive
-      run: cargo run -- --insensitive --regex "SSH$"
+    - name: Functional tests
+      if: matrix.build-mode == 'release'
+      run: |
+        cargo run --profile ${{ matrix.build-mode }} -- --help
+        cargo run --profile ${{ matrix.build-mode }} -- --regex 'GO$'
+        cargo run --profile ${{ matrix.build-mode }} -- --insensitive --regex "SSH$"
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v2
+      if: matrix.build-mode == 'release'
+      uses: actions/upload-artifact@v4
       with:
         name: sshchic-${{ matrix.os }}
         path: target/release/sshchic*
+        retention-days: 5
