@@ -1,13 +1,22 @@
 # 🔑 SSHChic
 
-✨ Generate ED25519 keys and find unique patterns in your SSH public keys!
+[![Rust Build](https://github.com/painteau/SSHChic/actions/workflows/build-rust.yml/badge.svg)](https://github.com/painteau/SSHChic/actions/workflows/build-rust.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 🚀 Features
+**A fast, multi-threaded ED25519 SSH key generator that searches for keys matching custom regex patterns.**
 
-- 🔍 Search public keys using regular expressions
-- ⚡ Ultra-fast ED25519 key generation
-- 🎯 Streaming mode for continuous searching
-- 🔠 Case sensitive/insensitive search support
+Create "vanity" SSH keys with personalized patterns in the public key or fingerprint. Perfect for making your SSH keys memorable, identifiable, or just aesthetically pleasing!
+
+## ✨ Features
+
+- 🔍 **Regex Pattern Matching** - Full regex support for flexible search patterns
+- ⚡ **Multi-threaded Performance** - Utilizes all CPU cores for maximum speed (thousands of keys/second)
+- 🎯 **Dual Match Modes** - Match against public key or SHA256 fingerprint
+- 🔄 **Streaming Mode** - Continuously generate multiple matching keys
+- 🔠 **Case-Insensitive Search** - Optional case-insensitive pattern matching
+- 📊 **Real-time Monitoring** - Live statistics on key generation rate
+- 🛡️ **Cryptographically Secure** - Uses industry-standard ED25519 algorithm
+- 🚀 **Cross-platform** - Works on Linux, macOS, and Windows
 
 ## 📦 Installation
 
@@ -46,47 +55,152 @@
    cargo build --release
    ```
 
-## 🛠️ Usage
+## 🎯 Quick Start
 
-Without options, SSHChic generates a key pair and saves them in `id_ed25519` and `id_ed25519.pub` files in the same directory.
-
-### Available Options
+Generate an SSH key with a pattern at the end:
 
 ```bash
-Usage: sshchic [OPTIONS]
+sshchic --regex "SSH$"
+```
+
+This will search until it finds a key ending with "SSH", then save it to:
+- `id_ed25519` - Your private key
+- `id_ed25519.pub` - Your public key
+
+## 🛠️ Usage
+
+```bash
+sshchic [OPTIONS]
 
 Options:
-    -i, --insensitive    Case insensitive search
-    -r, --regex <PATTERN>    Regex pattern to search for
-    -s, --streaming      Continue searching after a match
-    -h, --help          Print help
-    -V, --version       Print version
+  -r, --regex <PATTERN>    Regex pattern to search for (required)
+  -i, --insensitive        Enable case-insensitive matching
+  -s, --streaming          Keep searching after finding matches
+  -f, --fingerprint        Match against fingerprint instead of public key
+  -h, --help              Print help information
+  -V, --version           Print version information
 ```
 
 ## 💡 Examples
 
-### 1️⃣ Search for Specific Patterns
+### Basic Pattern Matching
 
 ```bash
-# Search for "prout" or "caca" at the end of the key (case insensitive) or "NeRD" (case sensitive)
-# (case insensitive by default, use --insensitive to enable case sensitive search
-sshchic -r '(?i)prout$|caca$|(?-i)nErD$'
+# Find a key ending with "SSH"
+sshchic --regex "SSH$"
+
+# Find a key containing "github" (case-insensitive)
+sshchic --regex "github" --insensitive
+
+# Find a key starting with specific characters
+sshchic --regex "^ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAtest"
 ```
 
-### 2️⃣ Continuous Search with Streaming
+### Fingerprint Matching
 
 ```bash
-# Search for "marmelade" continuously (case insensitive)
-sshchic -s -i -r marmelade
+# Search for pattern in the SHA256 fingerprint
+sshchic --regex "deadbeef" --fingerprint
+
+# Find a memorable fingerprint
+sshchic --regex "1234" --fingerprint
 ```
+
+### Advanced Patterns
+
+```bash
+# Find keys with repeated characters
+sshchic --regex "(.)\1\1"  # Three same characters in a row
+
+# Find keys with digits
+sshchic --regex "[0-9]{4}"  # Four consecutive digits
+
+# Multiple pattern options
+sshchic --regex "(cat|dog|fox)"
+
+# Palindrome pattern
+sshchic --regex "(.)(.)\2\1"
+```
+
+### Streaming Mode
+
+```bash
+# Generate multiple matching keys (displays but doesn't save)
+sshchic --regex "test" --streaming
+
+# Press Ctrl+C when you've found enough options
+```
+
+### Real-World Use Cases
+
+```bash
+# Personal branding - GitHub profile
+sshchic --regex "alice" --insensitive
+
+# Server identification
+sshchic --regex "prod" --fingerprint
+
+# Team keys
+sshchic --regex "devops" --insensitive
+
+# Lucky numbers
+sshchic --regex "777"
+```
+
+## 📊 Performance
+
+**Typical Performance** (8-core CPU):
+- ~10,000 - 50,000 keys/second
+- Linear scaling with CPU cores
+
+**Expected Search Times** (approximate):
+
+| Pattern Length | Example | Estimated Time |
+|----------------|---------|----------------|
+| 1-2 characters | `AB` | < 1 second |
+| 3 characters | `cat` | ~5 seconds |
+| 4 characters | `test` | ~5 minutes |
+| 5 characters | `hello` | ~6 hours |
+| 6+ characters | `github` | days to weeks |
+
+**Tip**: Shorter patterns = faster results! See [docs/EXAMPLES.md](docs/EXAMPLES.md) for detailed guidance.
 
 ## ⚠️ Important Notes
 
-- 🔒 Rewritten in Rust for improved performance and safety
-- 💻 Heavy and long CPU usage in streaming mode or with complex patterns
+- **File Overwriting**: Existing `id_ed25519` files will be overwritten without warning
+- **Streaming Mode**: Keys are displayed but NOT saved to files in streaming mode
+- **CPU Usage**: Will utilize all CPU cores - expect high CPU usage during search
+- **Pattern Feasibility**: Very long patterns (6+ characters) may take days or longer
+- **Security**: Generated keys are cryptographically secure, but vanity patterns slightly reduce entropy
 
-[![Rust Build](https://github.com/painteau/SSHChic/actions/workflows/build-rust.yml/badge.svg)](https://github.com/painteau/SSHChic/actions/workflows/build-rust.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## 📚 Documentation
+
+- **[Examples Guide](docs/EXAMPLES.md)** - Detailed usage examples and patterns
+- **[Architecture](docs/ARCHITECTURE.md)** - Technical design and implementation details
+- **[CI/CD Workflows](docs/WORKFLOWS.md)** - GitHub Actions workflows and release process
+- **[Contributing](CONTRIBUTING.md)** - How to contribute to the project
+- **[API Documentation](https://docs.rs/sshchic)** - Rustdoc generated documentation
+
+## 🤝 Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Development setup
+- Code standards
+- Testing guidelines
+- Pull request process
+
+## 🔒 Security
+
+SSHChic uses:
+- **ED25519** - Modern elliptic curve cryptography
+- **ChaCha20 CSPRNG** - Cryptographically secure random number generation
+- **Audited Libraries** - `ed25519-dalek` and other well-tested crates
+
+**Recommendation**: After generating keys, set proper permissions:
+```bash
+chmod 600 id_ed25519      # Private key - owner read/write only
+chmod 644 id_ed25519.pub  # Public key - world readable
+```
 
 ## 📄 License
 
