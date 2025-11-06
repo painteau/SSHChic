@@ -177,6 +177,7 @@ sshchic --regex "777"
 
 - **[Examples Guide](docs/EXAMPLES.md)** - Detailed usage examples and patterns
 - **[Architecture](docs/ARCHITECTURE.md)** - Technical design and implementation details
+- **[CI/CD Workflows](docs/WORKFLOWS.md)** - GitHub Actions workflows and release process
 - **[Contributing](CONTRIBUTING.md)** - How to contribute to the project
 - **[API Documentation](https://docs.rs/sshchic)** - Rustdoc generated documentation
 

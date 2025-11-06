@@ -1,206 +1,170 @@
-# .github/workflows/release.yaml
+# Build and upload release artifacts for multiple platforms
+#
+# This workflow is triggered when a new release is published on GitHub.
+# It builds SSHChic for all supported platforms using a matrix strategy
+# and uploads the binaries as release assets.
+#
+# Supported platforms:
+# - Linux: i686, x86_64, ARM, ARM64
+# - macOS: x86_64 (Intel), ARM64 (Apple Silicon)
+# - Windows: i686, x86_64
+#
+# The workflow uses modern GitHub Actions and caches dependencies
+# for faster builds.
+
+name: Build Release Artifacts
+
 on:
   release:
     types: [published]
-name: Build Release Artifacts
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g., v0.1.0)'
+        required: false
+
 jobs:
-  release-linux-386:
-    name: release linux/i686
+  # Pre-release quality checks
+  quality-checks:
+    name: Quality Checks
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: i686-unknown-linux-gnu
-        override: true
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release --target i686-unknown-linux-gnu
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          target/i686-unknown-linux-gnu/release/sshchic
-          LICENSE
-          README.md
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  release-linux-amd64:
-    name: release linux/x86_64
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-quality-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-quality-
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --verbose
+
+  # Build for Linux and Windows using cross-compilation
+  build-cross-platform:
+    name: Build ${{ matrix.platform.name }}
+    needs: quality-checks
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          # Linux targets
+          - { name: "linux-i686",    os: "ubuntu-latest", target: "i686-unknown-linux-gnu",      use_cross: true  }
+          - { name: "linux-x86_64",  os: "ubuntu-latest", target: "x86_64-unknown-linux-gnu",    use_cross: false }
+          - { name: "linux-arm",     os: "ubuntu-latest", target: "arm-unknown-linux-gnueabihf", use_cross: true  }
+          - { name: "linux-aarch64", os: "ubuntu-latest", target: "aarch64-unknown-linux-gnu",   use_cross: true  }
+          # macOS targets
+          - { name: "macos-x86_64",  os: "macos-latest",  target: "x86_64-apple-darwin",         use_cross: false }
+          - { name: "macos-aarch64", os: "macos-latest",  target: "aarch64-apple-darwin",        use_cross: false }
+          # Windows targets
+          - { name: "windows-i686",  os: "windows-latest", target: "i686-pc-windows-msvc",       use_cross: false }
+          - { name: "windows-x86_64", os: "windows-latest", target: "x86_64-pc-windows-msvc",    use_cross: false }
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+
+      - name: Install cross (for cross-compilation)
+        if: matrix.platform.use_cross
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.platform.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.platform.target }}-
+            ${{ runner.os }}-cargo-
+
+      - name: Build with cross
+        if: matrix.platform.use_cross
+        run: cross build --release --target ${{ matrix.platform.target }}
+
+      - name: Build with cargo
+        if: ${{ !matrix.platform.use_cross }}
+        run: cargo build --release --target ${{ matrix.platform.target }}
+
+      - name: Prepare artifacts (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.platform.target }}/release
+          tar czf sshchic-${{ matrix.platform.name }}.tar.gz sshchic
+          mv sshchic-${{ matrix.platform.name }}.tar.gz ../../../
+
+      - name: Prepare artifacts (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd target/${{ matrix.platform.target }}/release
+          7z a sshchic-${{ matrix.platform.name }}.zip sshchic.exe
+          mv sshchic-${{ matrix.platform.name }}.zip ../../../
+        shell: bash
+
+      - name: Generate checksums (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          shasum -a 256 sshchic-${{ matrix.platform.name }}.tar.gz > sshchic-${{ matrix.platform.name }}.tar.gz.sha256
+
+      - name: Generate checksums (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          certutil -hashfile sshchic-${{ matrix.platform.name }}.zip SHA256 > sshchic-${{ matrix.platform.name }}.zip.sha256
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sshchic-${{ matrix.platform.name }}.*
+            LICENSE
+            README.md
+          tag_name: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Create a summary of all built artifacts
+  release-summary:
+    name: Release Summary
+    needs: build-cross-platform
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: x86_64-unknown-linux-gnu
-        override: true
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release --target x86_64-unknown-linux-gnu
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          target/x86_64-unknown-linux-gnu/release/sshchic
-          LICENSE
-          README.md
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  release-linux-arm:
-    name: release linux/arm
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-    - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: arm-unknown-linux-gnueabihf
-        override: true
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release --target arm-unknown-linux-gnueabihf
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          target/arm-unknown-linux-gnueabihf/release/sshchic
-          LICENSE
-          README.md
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  release-linux-arm64:
-    name: release linux/aarch64
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-    - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: aarch64-unknown-linux-gnu
-        override: true
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release --target aarch64-unknown-linux-gnu
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          target/aarch64-unknown-linux-gnu/release/sshchic
-          LICENSE
-          README.md
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  release-darwin-amd64:
-    name: release macos/x86_64
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v3
-    - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: x86_64-apple-darwin
-        override: true
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release --target x86_64-apple-darwin
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          target/x86_64-apple-darwin/release/sshchic
-          LICENSE
-          README.md
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  release-darwin-arm64:
-    name: release macos/aarch64
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v3
-    - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: aarch64-apple-darwin
-        override: true
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release --target aarch64-apple-darwin
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          target/aarch64-apple-darwin/release/sshchic
-          LICENSE
-          README.md
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  release-windows-386:
-    name: release windows/i686
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v3
-    - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: i686-pc-windows-msvc
-        override: true
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release --target i686-pc-windows-msvc
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          target/i686-pc-windows-msvc/release/sshchic.exe
-          LICENSE
-          README.md
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  release-windows-amd64:
-    name: release windows/x86_64
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v3
-    - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: x86_64-pc-windows-msvc
-        override: true
-    - name: Build
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        args: --release --target x86_64-pc-windows-msvc
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          target/x86_64-pc-windows-msvc/release/sshchic.exe
-          LICENSE
-          README.md
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create summary
+        run: |
+          echo "## 🎉 Release Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All platform binaries have been built and uploaded successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Supported Platforms:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Linux: i686, x86_64, ARM, ARM64" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ macOS: x86_64 (Intel), ARM64 (Apple Silicon)" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Windows: i686, x86_64" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Download" >> $GITHUB_STEP_SUMMARY
+          echo "Visit the [releases page](https://github.com/${{ github.repository }}/releases) to download." >> $GITHUB_STEP_SUMMARY

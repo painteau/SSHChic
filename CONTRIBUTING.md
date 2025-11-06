@@ -463,15 +463,85 @@ cross build --target aarch64-unknown-linux-gnu
 ```
 SSHChic/
 ├── src/
-│   └── main.rs          # Main application code
-├── docs/                # Additional documentation
+│   └── main.rs                      # Main application code
+├── docs/                            # Additional documentation
+│   ├── ARCHITECTURE.md              # Technical architecture
+│   ├── EXAMPLES.md                  # Usage examples
+│   └── WORKFLOWS.md                 # CI/CD documentation
 ├── .github/
-│   └── workflows/       # CI/CD workflows
-├── Cargo.toml           # Rust package manifest
-├── README.md            # User documentation
-├── CONTRIBUTING.md      # This file
-└── LICENSE              # MIT License
+│   └── workflows/                   # CI/CD workflows
+│       ├── build-rust.yml           # Build and test
+│       ├── create-release-tag.yaml  # Release automation
+│       └── release-artefacts.yaml   # Multi-platform builds
+├── Cargo.toml                       # Rust package manifest
+├── README.md                        # User documentation
+├── CONTRIBUTING.md                  # This file
+└── LICENSE                          # MIT License
 ```
+
+## CI/CD Workflows
+
+SSHChic uses automated GitHub Actions workflows for continuous integration and deployment. Understanding these workflows helps you contribute effectively.
+
+### Build & Test Workflow
+
+**When it runs:**
+- On every push to main
+- On every pull request
+- When you manually trigger it
+
+**What it checks:**
+- Code formatting (`cargo fmt`)
+- Linting with Clippy (`cargo clippy`)
+- All tests pass (`cargo test`)
+- Builds successfully on Linux, macOS, and Windows
+
+**Your responsibility:**
+Before pushing, always run:
+```bash
+cargo fmt
+cargo clippy -- -D warnings
+cargo test
+```
+
+This ensures CI will pass!
+
+### Release Workflow
+
+**Automatic release creation:**
+- When you push to main with code changes
+- Creates a GitHub release with binaries for all platforms
+- Runs quality checks before releasing
+
+**Skip release:**
+Add `[skip-release]` to your commit message:
+```bash
+git commit -m "docs: update README [skip-release]"
+```
+
+**For maintainers:**
+See [docs/WORKFLOWS.md](docs/WORKFLOWS.md) for detailed release process.
+
+### Workflow Status
+
+Check workflow status:
+- Go to the **Actions** tab on GitHub
+- Look for green checkmarks ✅ (success) or red X ❌ (failure)
+- Click on failed runs to see error logs
+
+**If your PR fails CI:**
+1. Review the error logs
+2. Fix the issues locally
+3. Push updates to your branch
+4. CI will automatically re-run
+
+### More Information
+
+For comprehensive workflow documentation, see:
+- **[docs/WORKFLOWS.md](docs/WORKFLOWS.md)** - Complete CI/CD guide
+- Covers all workflows in detail
+- Troubleshooting common issues
+- Maintenance and updates
 
 ## Getting Help
 

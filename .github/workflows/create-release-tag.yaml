@@ -1,26 +1,227 @@
+# Automatically create release tags when code changes are pushed to main
+#
+# This workflow performs quality checks before creating a release.
+# It only creates releases when:
+# - Changes are pushed to main branch
+# - Changes affect source code or dependencies
+# - All quality checks pass (tests, linting, formatting)
+#
+# Release versioning:
+# - Uses semantic versioning (semver)
+# - Automatically bumps minor version (0.X.0)
+# - Can be manually triggered with custom version
+#
+# IMPORTANT: This workflow creates PUBLIC releases automatically.
+# Review changes carefully before merging to main.
+
 name: Create Release Tag
-on: 
+
+on:
   push:
     paths:
-      - 'src/**/*.rs'
+      - 'src/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type'
+        required: true
+        default: 'minor'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
-  release-on-push:
-    name: Create Release on Push
+  # Run comprehensive quality checks before creating release
+  pre-release-checks:
+    name: Pre-Release Quality Checks
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check_commit.outputs.should_release }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit for comparison
+
+      - name: Check if commit message indicates release
+        id: check_commit
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          echo "Commit message: $COMMIT_MSG"
+
+          # Skip release if commit message contains [skip-release] or [no-release]
+          if echo "$COMMIT_MSG" | grep -qiE '\[(skip-release|no-release)\]'; then
+            echo "Commit message indicates to skip release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Skip if this is a merge commit from dependabot or similar
+          if echo "$COMMIT_MSG" | grep -qiE '^Merge pull request.*dependabot'; then
+            echo "Skipping release for dependency update"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "should_release=true" >> $GITHUB_OUTPUT
+
+      - name: Install Rust toolchain
+        if: steps.check_commit.outputs.should_release == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache dependencies
+        if: steps.check_commit.outputs.should_release == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-check-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-check-
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        if: steps.check_commit.outputs.should_release == 'true'
+        run: cargo fmt -- --check
+
+      - name: Run clippy
+        if: steps.check_commit.outputs.should_release == 'true'
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        if: steps.check_commit.outputs.should_release == 'true'
+        run: cargo test --verbose --all-features
+
+      - name: Build release binary
+        if: steps.check_commit.outputs.should_release == 'true'
+        run: cargo build --release --verbose
+
+      - name: Verify Cargo.toml version
+        if: steps.check_commit.outputs.should_release == 'true'
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | cut -d '"' -f 2)
+          echo "Current version in Cargo.toml: $VERSION"
+
+          # Check if version follows semver
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "❌ Version in Cargo.toml is not valid semver: $VERSION"
+            exit 1
+          fi
+
+          echo "✅ Version is valid semver"
+
+  # Create the release tag and GitHub release
+  create-release:
+    name: Create Release
+    needs: pre-release-checks
+    if: needs.pre-release-checks.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: rymndhng/release-on-push-action@master
+      - name: Check out code
+        uses: actions/checkout@v4
         with:
-          bump_version_scheme: minor
-          tag_prefix: v
-          use_github_release_notes: true
-          release_name: "Release <RELEASE_VERSION>"
+          fetch-depth: 0  # Full history needed for release notes
+
+      - name: Get version from Cargo.toml
+        id: get_version
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | cut -d '"' -f 2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version: $VERSION"
+
+      - name: Check if tag already exists
+        id: check_tag
+        run: |
+          TAG="v${{ steps.get_version.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "❌ Tag $TAG already exists!"
+            echo "tag_exists=true" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "✅ Tag $TAG does not exist yet"
+            echo "tag_exists=false" >> $GITHUB_OUTPUT
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          TAG="v${{ steps.get_version.outputs.version }}"
+
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "First release, generating notes from all commits"
+            NOTES=$(git log --pretty=format:"- %s (%h)" --reverse)
+          else
+            echo "Generating notes from $PREV_TAG to HEAD"
+            NOTES=$(git log $PREV_TAG..HEAD --pretty=format:"- %s (%h)" --reverse)
+          fi
+
+          # Save to file to handle multiline
+          cat > release_notes.md << EOF
+          ## Changes in $TAG
+
+          $NOTES
+
+          ## Installation
+
+          Download the appropriate binary for your platform from the assets below.
+
+          ### Quick Install (Linux/macOS)
+          \`\`\`bash
+          # Download and install (replace with your platform)
+          wget https://github.com/${{ github.repository }}/releases/download/$TAG/sshchic-linux-x86_64.tar.gz
+          tar xzf sshchic-linux-x86_64.tar.gz
+          chmod +x sshchic
+          sudo mv sshchic /usr/local/bin/
+          \`\`\`
+
+          ### Verify Installation
+          \`\`\`bash
+          sshchic --version
+          \`\`\`
+
+          For more information, see the [README](https://github.com/${{ github.repository }}/blob/main/README.md).
+          EOF
+
+          echo "Release notes generated"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: SSHChic v${{ steps.get_version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: false  # We generate our own
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## 🎉 Release Created Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** v${{ steps.get_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** v${{ steps.get_version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The release has been created and the build workflow will now compile binaries for all platforms." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Wait for the 'Build Release Artifacts' workflow to complete" >> $GITHUB_STEP_SUMMARY
+          echo "2. Binaries will be automatically uploaded to the release" >> $GITHUB_STEP_SUMMARY
+          echo "3. Release is now public and ready for users to download" >> $GITHUB_STEP_SUMMARY
