@@ -1,4 +1,43 @@
-// Import required dependencies for CLI, cryptography, formatting and system operations
+//! # SSHChic
+//!
+//! A fast, multi-threaded ED25519 SSH key generator that searches for public keys matching custom patterns.
+//!
+//! This tool generates ED25519 key pairs in parallel and tests them against a regex pattern,
+//! allowing you to create "vanity" SSH keys with specific patterns in the public key or fingerprint.
+//!
+//! ## Features
+//!
+//! - **Multi-threaded generation**: Utilizes all CPU cores for maximum performance
+//! - **Regex pattern matching**: Full regex support for flexible pattern matching
+//! - **Dual match modes**: Match against public key or SHA256 fingerprint
+//! - **Streaming mode**: Continue searching for multiple matches
+//! - **Real-time monitoring**: Live statistics on key generation rate
+//! - **Graceful shutdown**: Clean termination with Ctrl+C
+//!
+//! ## Performance
+//!
+//! The tool generates thousands of keys per second, with actual performance depending on:
+//! - CPU core count and clock speed
+//! - Regex pattern complexity
+//! - Match target (fingerprint matching is slightly faster)
+//!
+//! ## Architecture
+//!
+//! ```text
+//! Main Thread
+//!   ├─ Parse CLI arguments
+//!   ├─ Compile regex pattern
+//!   ├─ Setup Ctrl+C handler
+//!   ├─ Spawn N worker threads (N = CPU cores)
+//!   │   └─ Each worker:
+//!   │       - Generate key pair
+//!   │       - Test against regex
+//!   │       - Save on match (unless streaming)
+//!   └─ Monitor loop (250ms interval):
+//!       - Display progress/stats
+//!       - Calculate moving average
+//! ```
+
 use clap::Parser;
 use colored::*;
 use ctrlc;
@@ -12,31 +51,99 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-// Define command-line arguments structure using clap
-#[derive(Parser)]
+/// Command-line arguments for SSHChic
+///
+/// This structure defines all available CLI options for controlling
+/// the key generation and pattern matching behavior.
+///
+/// # Examples
+///
+/// ```bash
+/// # Search for keys ending with "SSH"
+/// sshchic --regex "SSH$"
+///
+/// # Case-insensitive search for "github" in fingerprint
+/// sshchic --regex "github" --insensitive --fingerprint
+///
+/// # Streaming mode to find multiple matches
+/// sshchic --regex "^AAAA" --streaming
+/// ```
+#[derive(Parser, Clone)]
 #[command(author, version, about)]
 struct Args {
-    // Pattern to match in generated SSH keys
-    #[arg(short, long, help = "regex pattern goes here")]
+    /// Regex pattern to match against the generated SSH keys
+    ///
+    /// The pattern uses standard regex syntax. The match target depends
+    /// on the `--fingerprint` flag:
+    /// - Without flag: matches against the OpenSSH public key format
+    /// - With flag: matches against the SHA256 fingerprint (base64 encoded)
+    ///
+    /// # Examples
+    ///
+    /// - `"^AAAA"` - Keys starting with AAAA
+    /// - `"SSH$"` - Keys ending with SSH
+    /// - `"[0-9]{4}"` - Keys containing 4 consecutive digits
+    #[arg(short, long, help = "Regex pattern to search for")]
     regex: String,
 
-    // Enable case-insensitive matching
-    #[arg(short, long, help = "case-insensitive")]
+    /// Enable case-insensitive pattern matching
+    ///
+    /// When enabled, the regex pattern will match regardless of case.
+    /// For example, "ssh" will match "SSH", "ssh", or "SsH".
+    #[arg(short, long, help = "Enable case-insensitive matching")]
     insensitive: bool,
 
-    // Continue generating keys after finding a match
+    /// Continue generating keys after finding matches (streaming mode)
+    ///
+    /// By default, the program stops after finding the first match.
+    /// With this flag enabled, it will continue searching and display
+    /// all matching keys. Keys are NOT saved to files in streaming mode.
+    ///
+    /// **Warning**: This mode will consume significant CPU resources.
     #[arg(short, long, help = "Keep processing keys, even after a match")]
     streaming: bool,
 
-    // Match against key fingerprint instead of public key
+    /// Match against the key's SHA256 fingerprint instead of the public key
+    ///
+    /// When enabled, the regex pattern is tested against the base64-encoded
+    /// SHA256 fingerprint rather than the OpenSSH public key format.
+    /// Fingerprint matching is typically slightly faster.
     #[arg(short, long, help = "Match against fingerprint instead of public key")]
     fingerprint: bool,
 }
 
-// Global counter for tracking number of keys processed
+/// Global atomic counter tracking the total number of keys processed across all threads
+///
+/// This counter is incremented atomically by each worker thread for every key pair generated.
+/// It's used for progress reporting and statistics calculation in the main monitoring loop.
+///
+/// The counter uses `SeqCst` ordering to ensure consistency across threads.
 static COUNTER: AtomicI64 = AtomicI64::new(0);
 
-// Generate a new Ed25519 key pair
+/// Generates a new ED25519 key pair using cryptographically secure random number generation
+///
+/// This function creates a fresh ED25519 signing key using the thread-local random number
+/// generator and derives the corresponding verifying (public) key from it.
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - `SigningKey`: The private key used for signing operations
+/// - `VerifyingKey`: The public key derived from the signing key
+///
+/// # Security
+///
+/// This function uses `rand::thread_rng()` which provides cryptographically secure
+/// random numbers suitable for key generation. Each call produces a unique,
+/// unpredictable key pair.
+///
+/// # Examples
+///
+/// ```no_run
+/// let (signing_key, verifying_key) = generate_key_pair();
+/// // signing_key: used for SSH authentication
+/// // verifying_key: distributed to servers in authorized_keys
+/// ```
 fn generate_key_pair() -> (SigningKey, VerifyingKey) {
     let mut rng = rand::thread_rng();
     let signing_key = SigningKey::generate(&mut rng);
@@ -44,13 +151,60 @@ fn generate_key_pair() -> (SigningKey, VerifyingKey) {
     (signing_key, verifying_key)
 }
 
-// Convert public key to OpenSSH authorized_keys format
+/// Converts an ED25519 public key to OpenSSH authorized_keys format
+///
+/// This function takes a raw ED25519 verifying key and converts it to the
+/// standard OpenSSH public key format that can be added to `~/.ssh/authorized_keys`
+/// files on SSH servers.
+///
+/// # Arguments
+///
+/// * `public_key` - A reference to the ED25519 verifying key to convert
+///
+/// # Returns
+///
+/// A `String` containing the public key in OpenSSH format, which looks like:
+/// `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... [optional comment]`
+///
+/// # Examples
+///
+/// ```no_run
+/// let (_, verifying_key) = generate_key_pair();
+/// let authorized_key = get_authorized_key(&verifying_key);
+/// // authorized_key can now be appended to ~/.ssh/authorized_keys
+/// ```
 fn get_authorized_key(public_key: &VerifyingKey) -> String {
     let ssh_public_key = PublicKey::from_ed25519_key(public_key.as_bytes());
     ssh_public_key.to_string()
 }
 
-// Calculate SHA256 fingerprint of the public key
+/// Calculates the SHA256 fingerprint of an ED25519 public key
+///
+/// This function computes the SHA256 hash of the raw public key bytes and
+/// returns it as a base64-encoded string. This fingerprint format is commonly
+/// used for key verification and identification.
+///
+/// # Arguments
+///
+/// * `public_key` - A reference to the ED25519 verifying key to fingerprint
+///
+/// # Returns
+///
+/// A `String` containing the base64-encoded SHA256 hash of the public key.
+/// This is the same format displayed by `ssh-keygen -l` when prefixed with "SHA256:".
+///
+/// # Examples
+///
+/// ```no_run
+/// let (_, verifying_key) = generate_key_pair();
+/// let fingerprint = get_fingerprint(&verifying_key);
+/// println!("Key fingerprint: SHA256:{}", fingerprint);
+/// ```
+///
+/// # Note
+///
+/// The fingerprint is computed from the raw key bytes, not the OpenSSH format.
+/// This matches the standard SSH fingerprint calculation.
 fn get_fingerprint(public_key: &VerifyingKey) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -58,7 +212,46 @@ fn get_fingerprint(public_key: &VerifyingKey) -> String {
     base64::encode(hasher.finalize())
 }
 
-// Core function to generate and match SSH keys against the regex pattern
+/// Worker thread function that continuously generates and tests SSH keys against a regex pattern
+///
+/// This is the core search function executed by each worker thread. It runs in a loop,
+/// generating ED25519 key pairs and testing them against the provided regex pattern.
+/// When a match is found, it displays the keys and optionally saves them to files.
+///
+/// # Arguments
+///
+/// * `regex` - The compiled regex pattern to match against
+/// * `args` - Command-line arguments controlling match behavior
+/// * `running` - Atomic flag to signal when the thread should terminate
+///
+/// # Behavior
+///
+/// For each iteration:
+/// 1. Increments the global `COUNTER` atomically
+/// 2. Generates a new ED25519 key pair
+/// 3. Tests against either fingerprint or public key (based on `args.fingerprint`)
+/// 4. On match:
+///    - Prints the private key, public key, and fingerprint
+///    - In non-streaming mode: saves to `id_ed25519` and `id_ed25519.pub`, then exits
+///    - In streaming mode: continues searching for more matches
+///
+/// # Thread Safety
+///
+/// This function is designed to be called from multiple threads simultaneously.
+/// All shared state access uses atomic operations to ensure thread safety.
+///
+/// # Examples
+///
+/// ```no_run
+/// let regex = Regex::new("SSH$").unwrap();
+/// let args = Args { /* ... */ };
+/// let running = Arc::new(AtomicBool::new(true));
+///
+/// // Spawn worker thread
+/// thread::spawn(move || {
+///     find_ssh_keys(&regex, &args, running);
+/// });
+/// ```
 fn find_ssh_keys(regex: &Regex, args: &Args, running: Arc<AtomicBool>) {
     while running.load(Ordering::SeqCst) {
         // Increment the global counter atomically
@@ -100,7 +293,50 @@ fn find_ssh_keys(regex: &Regex, args: &Args, running: Arc<AtomicBool>) {
     }
 }
 
-// Calculate exponential moving average for key generation rate
+/// Calculates an exponential moving average for smoothing key generation rate metrics
+///
+/// This function implements an exponential moving average (EMA) with a configurable time window.
+/// It's used to smooth out fluctuations in the key generation rate display, providing a more
+/// stable and readable metric.
+///
+/// # Arguments
+///
+/// * `value` - The new value to incorporate into the average
+/// * `old_value` - The previous moving average value
+/// * `delta_time` - Time elapsed since the last update (in seconds)
+/// * `time_window` - The time constant for the exponential decay (in seconds)
+///
+/// # Returns
+///
+/// The updated exponential moving average value
+///
+/// # Algorithm
+///
+/// The function uses the formula:
+/// ```text
+/// alpha = 1 - exp(-delta_time / time_window)
+/// new_avg = alpha * value + (1 - alpha) * old_value
+/// ```
+///
+/// Where `alpha` represents the weight given to the new value. A larger `time_window`
+/// results in slower adaptation to changes (smoother average).
+///
+/// # Examples
+///
+/// ```no_run
+/// let mut avg_rate = 1000.0;  // Initial average
+/// let new_rate = 1200.0;      // New measurement
+/// let delta = 0.25;           // 250ms elapsed
+/// let window = 5.0;           // 5-second smoothing window
+///
+/// avg_rate = exp_moving_average(new_rate, avg_rate, delta, window);
+/// // avg_rate is now a smoothed value between 1000 and 1200
+/// ```
+///
+/// # Performance Note
+///
+/// SSHChic uses a 5-second time window with updates every 250ms to balance
+/// responsiveness with stability in the displayed key generation rate.
 fn exp_moving_average(value: f64, old_value: f64, delta_time: f64, time_window: f64) -> f64 {
     let alpha = 1.0 - (-delta_time / time_window).exp();
     alpha * value + (1.0 - alpha) * old_value
